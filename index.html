@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>F1走行シミュレーター</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #f5f5f3; color: #1a1a18; min-height: 100vh; padding: 2rem 1rem; }
+  h1 { font-size: 20px; font-weight: 500; margin-bottom: 1.5rem; }
+  .container { max-width: 760px; margin: 0 auto; }
+  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 1.2rem; }
+  .metric { background: #ebebea; border-radius: 8px; padding: .75rem 1rem; }
+  .metric-label { font-size: 12px; color: #5f5e5a; margin-bottom: 4px; }
+  .metric-val { font-size: 22px; font-weight: 500; }
+  .metric-unit { font-size: 11px; color: #888780; }
+  .section-title { font-size: 12px; font-weight: 500; color: #888780; text-transform: uppercase; letter-spacing: .05em; margin: 1.2rem 0 .5rem; }
+  .chart-wrap { position: relative; width: 100%; height: 260px; background: #fff; border-radius: 8px; border: 0.5px solid #d3d1c7; padding: 12px; }
+  .legend-row { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 8px; font-size: 12px; color: #5f5e5a; }
+  .legend-item { display: flex; align-items: center; gap: 5px; }
+  .legend-sq { width: 20px; height: 3px; border-radius: 2px; }
+  .force-bars { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: .5rem; }
+  .force-card { background: #ebebea; border-radius: 8px; padding: .75rem 1rem; }
+  .force-name { font-size: 12px; color: #5f5e5a; margin-bottom: 6px; display: flex; align-items: center; gap: 4px; }
+  .force-bar-bg { background: #d3d1c7; border-radius: 3px; height: 8px; overflow: hidden; }
+  .force-bar-fill { height: 8px; border-radius: 3px; transition: width .3s; }
+  .force-val { font-size: 13px; font-weight: 500; margin-top: 4px; }
+  .param-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .param-label { font-size: 13px; color: #5f5e5a; min-width: 200px; display: flex; align-items: center; gap: 6px; }
+  .param-val { font-size: 13px; font-weight: 500; min-width: 60px; text-align: right; }
+  input[type=range] { flex: 1; accent-color: #378ADD; cursor: pointer; }
+  .hint { font-size: 12px; color: #888780; background: #ebebea; border-radius: 8px; padding: .75rem 1rem; margin-top: 1.2rem; line-height: 1.6; }
+  .hint strong { color: #1a1a18; }
+  @media (max-width: 540px) {
+    .metrics { grid-template-columns: repeat(2, 1fr); }
+    .force-bars { grid-template-columns: 1fr; }
+    .param-label { min-width: 140px; font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>F1走行シミュレーター</h1>
+
+  <div class="metrics">
+    <div class="metric"><div class="metric-label">最高速度</div><div class="metric-val" id="m-topspeed">—</div><div class="metric-unit">km/h</div></div>
+    <div class="metric"><div class="metric-label">0→100 km/h</div><div class="metric-val" id="m-0100">—</div><div class="metric-unit">秒</div></div>
+    <div class="metric"><div class="metric-label">最大G（制動）</div><div class="metric-val" id="m-maxg">—</div><div class="metric-unit">G</div></div>
+    <div class="metric"><div class="metric-label">ラップタイム推定</div><div class="metric-val" id="m-lap">—</div><div class="metric-unit">秒</div></div>
+  </div>
+
+  <div class="section-title">速度・力の時系列</div>
+  <div class="legend-row">
+    <span class="legend-item"><span class="legend-sq" style="background:#378ADD"></span>速度 (km/h)</span>
+    <span class="legend-item"><span class="legend-sq" style="background:#D85A30"></span>エンジン推力 (kN)</span>
+    <span class="legend-item"><span class="legend-sq" style="background:#1D9E75"></span>合計抵抗力 (kN)</span>
+  </div>
+  <div class="chart-wrap">
+    <canvas id="mainChart" role="img" aria-label="時間に対する速度・推力・抵抗力の変化グラフ">F1車両の走行シミュレーション結果</canvas>
+  </div>
+
+  <div class="section-title">各力の内訳（最高速時）</div>
+  <div class="force-bars">
+    <div class="force-card">
+      <div class="force-name"><i class="ti ti-wind"></i>空気抵抗（ドラッグ）</div>
+      <div class="force-bar-bg"><div class="force-bar-fill" id="bar-drag" style="background:#378ADD; width:0%"></div></div>
+      <div class="force-val" id="val-drag">— kN</div>
+    </div>
+    <div class="force-card">
+      <div class="force-name"><i class="ti ti-arrow-down"></i>ダウンフォース</div>
+      <div class="force-bar-bg"><div class="force-bar-fill" id="bar-df" style="background:#D85A30; width:0%"></div></div>
+      <div class="force-val" id="val-df">— kN</div>
+    </div>
+    <div class="force-card">
+      <div class="force-name"><i class="ti ti-circle"></i>タイヤ転がり抵抗</div>
+      <div class="force-bar-bg"><div class="force-bar-fill" id="bar-roll" style="background:#1D9E75; width:0%"></div></div>
+      <div class="force-val" id="val-roll">— kN</div>
+    </div>
+    <div class="force-card">
+      <div class="force-name"><i class="ti ti-bolt"></i>エンジン推力</div>
+      <div class="force-bar-bg"><div class="force-bar-fill" id="bar-eng" style="background:#BA7517; width:0%"></div></div>
+      <div class="force-val" id="val-eng">— kN</div>
+    </div>
+  </div>
+
+  <div class="section-title">パラメータ設定</div>
+
+  <div class="param-row">
+    <span class="param-label"><i class="ti ti-bolt"></i>エンジン出力</span>
+    <input type="range" min="400" max="1000" step="10" value="750" id="p-power">
+    <span class="param-val"><span id="v-power">750</span> kW</span>
+  </div>
+  <div class="param-row">
+    <span class="param-label"><i class="ti ti-wind"></i>抗力係数 Cd</span>
+    <input type="range" min="0.5" max="1.5" step="0.01" value="0.9" id="p-cd">
+    <span class="param-val"><span id="v-cd">0.90</span></span>
+  </div>
+  <div class="param-row">
+    <span class="param-label"><i class="ti ti-arrow-down"></i>ダウンフォース係数 Cl</span>
+    <input type="range" min="0.5" max="4.0" step="0.05" value="2.5" id="p-cl">
+    <span class="param-val"><span id="v-cl">2.50</span></span>
+  </div>
+  <div class="param-row">
+    <span class="param-label"><i class="ti ti-circle"></i>タイヤ摩擦係数 μ</span>
+    <input type="range" min="0.8" max="2.5" step="0.05" value="1.8" id="p-mu">
+    <span class="param-val"><span id="v-mu">1.80</span></span>
+  </div>
+  <div class="param-row">
+    <span class="param-label"><i class="ti ti-weight"></i>車両質量</span>
+    <input type="range" min="600" max="900" step="10" value="798" id="p-mass">
+    <span class="param-val"><span id="v-mass">798</span> kg</span>
+  </div>
+  <div class="param-row">
+    <span class="param-label"><i class="ti ti-resize"></i>フロント面積 A</span>
+    <input type="range" min="0.8" max="1.8" step="0.05" value="1.2" id="p-area">
+    <span class="param-val"><span id="v-area">1.20</span> m²</span>
+  </div>
+
+  <div class="hint">
+    <strong>探究のヒント：</strong>
+    Cdを最小(0.5)と最大(1.5)で比べると空気抵抗の影響がわかります。
+    Clを上げると最高速は下がるのに、なぜF1はダウンフォースを重視するのか考えてみましょう。
+    エンジン出力を2倍にしても最高速が2倍にならないのはなぜか（速度の3乗則）も注目ポイントです。
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const rho = 1.225, g = 9.81, dt = 0.05, T_SIM = 15;
+
+function simulate(p) {
+  const times = [], speeds = [], thrusts = [], resistances = [];
+  let v = 0;
+  for (let t = 0; t <= T_SIM; t += dt) {
+    const drag = 0.5 * rho * p.cd * p.area * v * v;
+    const df   = 0.5 * rho * p.cl * p.area * v * v;
+    const nf   = p.mass * g + df;
+    const roll = 0.015 * nf;
+    const maxT = p.mu * nf;
+    const eng  = v < 0.5 ? p.power / 0.5 : Math.min(p.power / v, maxT);
+    v = Math.max(0, v + (eng - drag - roll) / p.mass * dt);
+    times.push(parseFloat(t.toFixed(2)));
+    speeds.push(parseFloat((v * 3.6).toFixed(1)));
+    thrusts.push(parseFloat((eng / 1000).toFixed(3)));
+    resistances.push(parseFloat(((drag + roll) / 1000).toFixed(3)));
+  }
+  return { times, speeds, thrusts, resistances };
+}
+
+function getTopSpeed(p) {
+  let v = 0;
+  for (let i = 0; i < 50000; i++) {
+    const drag = 0.5 * rho * p.cd * p.area * v * v;
+    const df   = 0.5 * rho * p.cl * p.area * v * v;
+    const nf   = p.mass * g + df;
+    const roll = 0.015 * nf;
+    const eng  = Math.min(p.power / Math.max(v, 0.1), p.mu * nf);
+    const net  = eng - drag - roll;
+    if (Math.abs(net) < 1) break;
+    v = Math.max(0, v + (net / p.mass) * 0.05);
+  }
+  return v;
+}
+
+function getParams() {
+  return {
+    power: +document.getElementById('p-power').value * 1000,
+    cd:    +document.getElementById('p-cd').value,
+    cl:    +document.getElementById('p-cl').value,
+    mu:    +document.getElementById('p-mu').value,
+    mass:  +document.getElementById('p-mass').value,
+    area:  +document.getElementById('p-area').value,
+  };
+}
+
+let chart;
+function updateChart(data) {
+  const skip = 4;
+  const labels = data.times.filter((_,i)=>i%skip===0).map(t=>t.toFixed(1));
+  const spd    = data.speeds.filter((_,i)=>i%skip===0);
+  const thr    = data.thrusts.filter((_,i)=>i%skip===0);
+  const res    = data.resistances.filter((_,i)=>i%skip===0);
+  if (chart) {
+    chart.data.labels = labels;
+    chart.data.datasets[0].data = spd;
+    chart.data.datasets[1].data = thr;
+    chart.data.datasets[2].data = res;
+    chart.update('none');
+  } else {
+    chart = new Chart(document.getElementById('mainChart'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label:'速度 (km/h)',   data:spd, borderColor:'#378ADD', backgroundColor:'rgba(55,138,221,0.08)', borderWidth:2, pointRadius:0, yAxisID:'y',  fill:true },
+          { label:'推力 (kN)',     data:thr, borderColor:'#D85A30', borderWidth:2, borderDash:[6,3], pointRadius:0, yAxisID:'y2', fill:false },
+          { label:'抵抗力 (kN)',   data:res, borderColor:'#1D9E75', borderWidth:2, borderDash:[2,3], pointRadius:0, yAxisID:'y2', fill:false },
+        ]
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false, animation:false,
+        plugins:{ legend:{ display:false }, tooltip:{ mode:'index', intersect:false } },
+        scales:{
+          x:  { title:{ display:true, text:'時間 (秒)', font:{size:11} }, ticks:{ font:{size:11}, autoSkip:true, maxTicksLimit:10 } },
+          y:  { title:{ display:true, text:'速度 (km/h)', font:{size:11} }, ticks:{ font:{size:11} }, position:'left',  beginAtZero:true },
+          y2: { title:{ display:true, text:'力 (kN)',     font:{size:11} }, ticks:{ font:{size:11} }, position:'right', beginAtZero:true, grid:{ drawOnChartArea:false } }
+        }
+      }
+    });
+  }
+}
+
+function updateForces(p, topV) {
+  const drag = 0.5 * rho * p.cd * p.area * topV * topV;
+  const df   = 0.5 * rho * p.cl * p.area * topV * topV;
+  const nf   = p.mass * g + df;
+  const roll = 0.015 * nf;
+  const eng  = Math.min(p.power / Math.max(topV, 0.1), p.mu * nf);
+  const maxF = Math.max(drag, df, roll, eng, 1);
+  const pct  = f => Math.round(Math.min(f / maxF * 100, 100));
+  document.getElementById('bar-drag').style.width = pct(drag)+'%';
+  document.getElementById('val-drag').textContent  = (drag/1000).toFixed(2)+' kN';
+  document.getElementById('bar-df').style.width   = pct(df)+'%';
+  document.getElementById('val-df').textContent   = (df/1000).toFixed(2)+' kN';
+  document.getElementById('bar-roll').style.width = pct(roll)+'%';
+  document.getElementById('val-roll').textContent = (roll/1000).toFixed(2)+' kN';
+  document.getElementById('bar-eng').style.width  = pct(eng)+'%';
+  document.getElementById('val-eng').textContent  = (eng/1000).toFixed(2)+' kN';
+}
+
+function updateMetrics(data, p) {
+  const topKmh = Math.max(...data.speeds);
+  document.getElementById('m-topspeed').textContent = Math.round(topKmh);
+  const idx = data.speeds.findIndex(s => s >= 100);
+  document.getElementById('m-0100').textContent = idx >= 0 ? (idx * dt).toFixed(2) : '>15';
+  const topV = topKmh / 3.6;
+  const df   = 0.5 * rho * p.cl * p.area * topV * topV;
+  const maxG = (p.mu * (p.mass * g + df) / (p.mass * g)).toFixed(2);
+  document.getElementById('m-maxg').textContent = maxG;
+  document.getElementById('m-lap').textContent  = Math.round(1500 / (topKmh / 3.6) + 20);
+}
+
+function run() {
+  const p    = getParams();
+  const data = simulate(p);
+  const topV = getTopSpeed(p);
+  updateChart(data);
+  updateMetrics(data, p);
+  updateForces(p, topV);
+}
+
+const sliders = {
+  'p-power': { out:'v-power', fmt: v => v },
+  'p-cd':    { out:'v-cd',    fmt: v => (+v).toFixed(2) },
+  'p-cl':    { out:'v-cl',    fmt: v => (+v).toFixed(2) },
+  'p-mu':    { out:'v-mu',    fmt: v => (+v).toFixed(2) },
+  'p-mass':  { out:'v-mass',  fmt: v => v },
+  'p-area':  { out:'v-area',  fmt: v => (+v).toFixed(2) },
+};
+Object.entries(sliders).forEach(([id, {out, fmt}]) => {
+  document.getElementById(id).addEventListener('input', e => {
+    document.getElementById(out).textContent = fmt(e.target.value);
+    run();
+  });
+});
+
+run();
+</script>
+</body>
+</html>
